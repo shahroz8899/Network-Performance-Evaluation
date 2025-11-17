@@ -155,6 +155,9 @@ We found:
 
 Purpose: Measure baseline performance and identify single-pipeline limits.
 
+![Experiment Diagram](images/Case1.png)
+
+
 ---
 
 ## **Case 2: Three Pis → One MQTT Broker → One Receiver (5 GHz Wi-Fi)**
