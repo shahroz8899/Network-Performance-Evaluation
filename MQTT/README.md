@@ -155,7 +155,7 @@ We found:
 
 Purpose: Measure baseline performance and identify single-pipeline limits.
 
-![Experiment Diagram](images/Case1.png)
+![Experiment Diagram](Images/Case1.png)
 
 
 ---
