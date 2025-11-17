@@ -169,6 +169,8 @@ Purpose: Measure baseline performance and identify single-pipeline limits.
 
 Purpose: Observe scaling behavior when multiple publishers compete for a single broker.
 
+![Experiment Diagram](Images/Case2.png)
+
 ---
 
 ## **Case 3: Three Pis → Three MQTT Brokers → Three Worker Nodes (5 GHz Wi-Fi)**
@@ -180,6 +182,8 @@ Purpose: Observe scaling behavior when multiple publishers compete for a single 
 
 Purpose: Measure parallelism and evaluate whether broker isolation removes bottlenecks.
 
+![Experiment Diagram](Images/Case3.png)
+
 ---
 
 ## **Case 4: Single Pi → Single Broker → Single Receiver (LAN)**
@@ -189,6 +193,8 @@ Purpose: Measure parallelism and evaluate whether broker isolation removes bottl
 * Broker IP = sender Pi's IP.
 
 Purpose: Compare LAN vs. Wi-Fi single-pipeline throughput.
+
+![Experiment Diagram](Images/Case4.png)
 
 ---
 
@@ -201,6 +207,8 @@ Purpose: Compare LAN vs. Wi-Fi single-pipeline throughput.
 
 Purpose: Evaluate LAN improvements in multi-publisher saturation.
 
+![Experiment Diagram](Images/Case5.png)
+
 ---
 
 ## **Case 6: Three Pis → Three Brokers → Three Worker Nodes (LAN)**
@@ -210,6 +218,8 @@ Purpose: Evaluate LAN improvements in multi-publisher saturation.
 * Each subscriber listens to only its broker.
 
 Purpose: Determine maximum achievable throughput when both network and broker bottlenecks are removed.
+
+![Experiment Diagram](Images/Case6.png)
 
 ---
 
