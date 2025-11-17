@@ -276,4 +276,3 @@ Each publisher begins streaming images immediately.
 
 This repository provides a complete framework for **measuring MQTT-based image delivery performance** in controlled multi-device setups. Through structured tests across Wi-Fi and LAN, and varying publishers/brokers, it becomes possible to empirically identify bottlenecks and quantify the impact of network conditions and broker load on message throughput.
 
-This structured README allows any user to replicate the experiments and understand the behavior of MQTT-based image streaming systems.
