@@ -5,8 +5,8 @@ import cv2
 import zenoh
 
 # ===== Configuration =====
-# Zenoh key base (similar to topic)
-KEY_BASE = "office/pi1/image"
+# Zenoh key base (similar to topic in MQTT)
+KEY_BASE = "office/pi1/image" # We can choose any KEY
 
 # Total keys per image (including the base one): pi1, pi1_1 ... pi1_(REPLICAS-1)
 REPLICAS = 1
@@ -53,7 +53,7 @@ def update_image_number(counter_file, number):
 
 def main():
     # ===== Zenoh configuration =====
-    WORKER_IP = "192.168.1.176"   # <-- your worker node IP
+    WORKER_IP = "192.168.1.#"   # <-- your worker node IP
 
     print(f"[Zenoh] Connecting to worker @ {WORKER_IP}:7447 ...")
 
