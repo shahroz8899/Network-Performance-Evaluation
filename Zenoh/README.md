@@ -287,6 +287,7 @@ See if adding more Pis increases throughput on Wi-Fi.
 
 5. Start both publishers.
 
+![Experiment Diagram](Images/Case2.png)
 
 ---
 
