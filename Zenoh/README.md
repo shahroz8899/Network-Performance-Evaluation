@@ -330,7 +330,7 @@ KEY_EXPR="office/pi2/image"
 
 Start 2 publishers separately.
 
-
+![Experiment Diagram](Images/Case4.png)
 
 ---
 
