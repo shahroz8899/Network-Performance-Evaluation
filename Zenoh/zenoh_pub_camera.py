@@ -6,7 +6,7 @@ import zenoh
 
 # ===== Configuration =====
 # Zenoh key base (similar to topic in MQTT)
-KEY_BASE = "office/pi1/image" # We can choose any KEY
+KEY_BASE = "office/pi1/image" # We can choose any KEY but Should match subscriber’s KEY_EXPR
 
 # Total keys per image (including the base one): pi1, pi1_1 ... pi1_(REPLICAS-1)
 REPLICAS = 1
