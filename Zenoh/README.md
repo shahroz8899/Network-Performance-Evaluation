@@ -297,7 +297,7 @@ See if adding more Pis increases throughput on Wi-Fi.
 
 Same as Case 2 but with 3 Pis.
 
-
+![Experiment Diagram](Images/Case3.png)
 ---
 
 # **Case 4 — 2 Pis → 2 Workers, Each Own Zenoh, Wi-Fi**
