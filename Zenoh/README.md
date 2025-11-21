@@ -88,10 +88,10 @@ This script:
 
 * Declares itself as a Zenoh **subscriber**.
 
-* Listens for a specific image key:
+* Listens for a specific image key, i.e:
 
   ```python
-  KEY_EXPR = "office/pi1/image"
+  KEY_EXPR = "office/pi1/image"  # It can be any.
   ```
 
 * For each received payload:
@@ -101,13 +101,13 @@ This script:
 
 * Prints the number of images received per second.
 
-For all experiments, you **keep this script unchanged**, except making sure its `KEY_EXPR` matches the publisher’s `KEY_BASE`.
+For all experiments,  **keep this script unchanged**, except making sure its `KEY_EXPR` matches the publisher’s `KEY_BASE`.
 
 ---
 
 ## 4. System Preparation (All Machines)
 
-You must configure **every Raspberry Pi** (publishers) and **every worker node** (subscribers).
+Must configure **every Raspberry Pi** (publishers) and **every worker node** (subscribers).
 
 ### 4.1 Update System
 
@@ -175,13 +175,13 @@ On each Pi:
    nano zenoh_pub_camera.py
    ```
 
-2. Set the worker IP:
+2. Set the worker IP, i.e.:
 
    ```python
-   WORKER_IP = "192.168.1.100"
+   WORKER_IP = "192.168.1.#"
    ```
 
-3. Set Zenoh key for this Pi:
+3. Set Zenoh key for this Pi, I.e:
 
    ```python
    KEY_BASE = "office/pi1/image"
@@ -190,7 +190,7 @@ On each Pi:
 4. Adjust multiply factor:
 
    ```python
-   MULTIPLY_FACTOR = 15
+   MULTIPLY_FACTOR = #
    ```
 
 5. Run the publisher:
@@ -219,7 +219,7 @@ Each case below includes:
 
 ### **Goal:**
 
-Test maximum throughput of a single publisher–subscriber pair over Wi-Fi.
+Test the maximum throughput of a single publisher–subscriber pair over Wi-Fi.
 
 ### **Steps:**
 
@@ -250,10 +250,6 @@ Test maximum throughput of a single publisher–subscriber pair over Wi-Fi.
      python3 zenoh_pub_camera.py
      ```
 
-### **What to observe:**
-
-Worker will receive ~**65 images/s (~3.3 MB/s)**
-→ Wi-Fi becomes bottleneck.
 
 ---
 
@@ -277,23 +273,20 @@ See if adding more Pis increases throughput on Wi-Fi.
 
    ```python
    KEY_BASE = "office/pi1/image"
+   WORKER_IP = "<worker_ip>
    ```
 
 4. On **Pi2**:
 
    ```python
    KEY_BASE = "office/pi1/image"
+   WORKER_IP = "<worker_ip>
    ```
 
    (Both Pis publish to same key → same worker)
 
 5. Start both publishers.
 
-### **Observe:**
-
-Worker receives only **~55 images/s total**.
-→ Adding Pis does *not* increase throughput.
-→ Wi-Fi is bottleneck.
 
 ---
 
@@ -303,15 +296,45 @@ Worker receives only **~55 images/s total**.
 
 Same as Case 2 but with 3 Pis.
 
-### Observe:
-
-Total drops to **~50 images/s**.
-→ More Pis = more contention.
-→ Wi-Fi saturated early.
 
 ---
 
-# **Case 4 — 3 Pis → 3 Workers, Each Own Zenoh, Wi-Fi**
+# **Case 4 — 2 Pis → 2 Workers, Each Own Zenoh, Wi-Fi**
+
+### **Goal:**
+
+Check if using separate Zenoh sessions avoids bottleneck.
+
+### Steps:
+
+1. Pi1 → Worker1 (`office/pi1/image`)
+2. Pi2 → Worker2 (`office/pi2/image`)
+
+
+Each publisher uses its own IP + key.
+
+### Commands:
+
+On Worker1:
+
+```bash
+python3 zenoh_sub_images.py
+```
+
+Worker2:
+
+```python
+KEY_EXPR="office/pi2/image"
+```
+
+Start 2 publishers separately.
+
+
+
+---
+
+
+# **Case 5 — 3 Pis → 3 Workers, Each Own Zenoh, Wi-Fi**
 
 ### **Goal:**
 
@@ -347,18 +370,10 @@ KEY_EXPR="office/pi3/image"
 
 Start 3 publishers separately.
 
-### Observe:
-
-* Pair 1: ~38 img/s
-* Pair 2: ~3.5 img/s
-* Pair 3: ~15 img/s
-* **Total ≈ 575 images received (3.7 MB/s)**
-
-→ Wi-Fi limits total bandwidth, regardless of Zenoh configuration.
 
 ---
 
-# **Case 5 — 1 Pi → 1 Worker on Ethernet LAN**
+# **Case 6 — 1 Pi → 1 Worker on Ethernet LAN**
 
 ### Steps:
 
@@ -366,37 +381,30 @@ Start 3 publishers separately.
 2. Run subscriber on worker.
 3. Run publisher on Pi.
 
-### Observe:
 
-~**150 images/s (8.79 MB/s)**
-→ Huge jump from Wi-Fi (~3 MB/s).
-→ Network (Wi-Fi) was the bottleneck before.
 
 ---
 
-# **Case 6 — 2 Pis → 1 Worker, Same Zenoh, LAN**
+# **Case 7 — 2 Pis → 1 Worker, Same Zenoh, LAN**
 
 ### Steps:
 
 Both Pis publish to same key → same worker.
 
-### Observe:
-
-~**200 images/s (11.7 MB/s)**
-→ Ethernet scales better; Zenoh handles multi-Pi load.
 
 ---
 
-# **Case 7 — 3 Pis → 1 Worker, Same Zenoh, LAN**
+# **Case 8 — 3 Pis → 1 Worker, Same Zenoh, LAN**
 
-### Observe:
+Three Pis publish to same key → same worker.
 
-~**248 images/s (14.5 MB/s)**
-Scaling is **sub-linear** → worker CPU/disk or Zenoh serialization starts to limit throughput.
+1. All the Pis will have same Key matches to the key of the subscriber node/worker.
+2. All the Pis will have IP of the worker. 
+
 
 ---
 
-# **Case 8 — 2 Pis → 2 Workers, Independent Zenoh, LAN**
+# **Case 9 — 2 Pis → 2 Workers, Independent Zenoh, LAN**
 
 ### Steps:
 
@@ -405,19 +413,19 @@ Scaling is **sub-linear** → worker CPU/disk or Zenoh serialization starts to l
 
 Separate IPs, separate keys.
 
-### Observe:
 
-~**360 images total (~21.1 MB)**
-→ LAN supports much higher aggregate throughput.
 
 ---
 
-# **Case 9 — 3 Pis → 3 Workers, Independent Zenoh, LAN**
+# **Case 10 — 3 Pis → 3 Workers, Independent Zenoh, LAN**
 
-### Observe:
+### Steps:
 
-~**450 images (~26.4 MB)** total
-Each pair receives ~150 images/s.
+* Pi1 ↔ Worker1
+* Pi2 ↔ Worker2
+* Pi3 ↔ Worker3
+
+Separate IPs, separate keys.
 
 → Zenoh scales horizontally when using multiple broker/worker pipelines.
 
@@ -435,8 +443,7 @@ Each pair receives ~150 images/s.
   ```
 
   to maximize camera output rate.
-* Prefer **Ethernet** for high-throughput experiments.
-* Wi-Fi caps around **3–4 MB/s** regardless of configuration.
+
 
 ---
 
