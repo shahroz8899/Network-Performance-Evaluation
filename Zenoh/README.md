@@ -1,8 +1,4 @@
-Below is the **updated full README** with an additional **Case-by-Case Step-by-Step Guide**, written so that **any new reader can follow and reproduce the entire experiment** without prior knowledge.
 
-This is a **complete, polished, publication-quality README.md**.
-
----
 
 # Zenoh-Based Multi-Raspberry Pi Image Streaming
 
