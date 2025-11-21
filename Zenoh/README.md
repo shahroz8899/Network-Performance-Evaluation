@@ -249,7 +249,7 @@ Test the maximum throughput of a single publisher–subscriber pair over Wi-Fi.
      ```bash
      python3 zenoh_pub_camera.py
      ```
-
+![Experiment Diagram](Images/Case1.png)
 
 ---
 
