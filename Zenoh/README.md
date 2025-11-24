@@ -383,7 +383,7 @@ Start 3 publishers separately.
 2. Run subscriber on worker.
 3. Run publisher on Pi.
 
-
+![Experiment Diagram](Images/Case6.png)
 
 ---
 
@@ -393,7 +393,7 @@ Start 3 publishers separately.
 
 Both Pis publish to same key → same worker.
 
-
+![Experiment Diagram](Images/Case7.png)
 ---
 
 # **Case 8 — 3 Pis → 1 Worker, Same Zenoh, LAN**
@@ -403,7 +403,7 @@ Three Pis publish to same key → same worker.
 1. All the Pis will have same Key matches to the key of the subscriber node/worker.
 2. All the Pis will have IP of the worker. 
 
-
+![Experiment Diagram](Images/Case9.png)
 ---
 
 # **Case 9 — 2 Pis → 2 Workers, Independent Zenoh, LAN**
