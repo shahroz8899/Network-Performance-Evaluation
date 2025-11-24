@@ -415,7 +415,7 @@ Three Pis publish to same key → same worker.
 
 Separate IPs, separate keys.
 
-
+![Experiment Diagram](Images/Case9.png)
 
 ---
 
@@ -430,7 +430,7 @@ Separate IPs, separate keys.
 Separate IPs, separate keys.
 
 → Zenoh scales horizontally when using multiple broker/worker pipelines.
-
+![Experiment Diagram](Images/Case10.png)
 ---
 
 # 7. Final Notes for Reproducibility
