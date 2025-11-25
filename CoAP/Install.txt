@@ -1,0 +1,17 @@
+
+
+# Create or recreate venv
+python3 -m venv env
+
+# Activate
+source env/bin/activate
+
+# Confirm you're in the venv
+which python
+which pip
+
+# Install dependencies inside venv
+pip install --upgrade pip
+pip install -r Requirements.txt
+# or at least:
+pip install aiocoap opencv-python-headless
