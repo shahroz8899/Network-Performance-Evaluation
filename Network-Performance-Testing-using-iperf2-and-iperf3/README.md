@@ -2,9 +2,6 @@
 
 # 📘 **Network Performance Testing Report using iperf2 and iperf3**
 
-**Author:** shahroz
-**Institution:** M3S, University of Oulu
-**Purpose:** Evaluate network throughput between nodes (Raspberry Pis and server)
 
 ---
 
