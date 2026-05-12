@@ -304,12 +304,12 @@ Same as Case 2 but with 3 Pis.
 
 ### **Goal:**
 
-Check if using separate Zenoh sessions avoids bottleneck.
+Check if using separate Zenoh sessions avoids the bottleneck.
 
 ### Steps:
 
-1. Pi1 → Worker1 (`office/pi1/image`)
-2. Pi2 → Worker2 (`office/pi2/image`)
+1. Pi1 → Worker1 (`office/pi1/image`) port i.e. 7447
+2. Pi2 → Worker2 (`office/pi2/image`) port i.e. 7448
 
 
 Each publisher uses its own IP + key.
@@ -320,12 +320,14 @@ On Worker1:
 
 ```bash
 python3 zenoh_sub_images.py
+port i.e. 7447
 ```
 
 Worker2:
 
 ```python
 KEY_EXPR="office/pi2/image"
+port i.e. 7447
 ```
 
 Start 2 publishers separately.
@@ -343,9 +345,9 @@ Check if using separate Zenoh sessions avoids bottleneck.
 
 ### Steps:
 
-1. Pi1 → Worker1 (`office/pi1/image`)
-2. Pi2 → Worker2 (`office/pi2/image`)
-3. Pi3 → Worker3 (`office/pi3/image`)
+1. Pi1 → Worker1 (`office/pi1/image`)port i.e. 7447
+2. Pi2 → Worker2 (`office/pi2/image`)port i.e. 7448
+3. Pi3 → Worker3 (`office/pi3/image`)port i.e. 7449
 
 Each publisher uses its own IP + key.
 
