@@ -22,41 +22,58 @@ csv_file = "zenoh_receiver_results.csv"
 
 timer_started = False
 saved_count = 0
+receiver_active = False
+active_callbacks = 0
+
 stop_event = threading.Event()
 lock = threading.Lock()
+callbacks_done = threading.Condition(lock)
 
 all_loop_results = []
 
 
 def stop_after_10_seconds():
     time.sleep(RUN_AFTER_FIRST_IMAGE)
-    print("\n⏱️ 10 seconds completed after first image. Stopping receiver...")
+    print(f"\n⏱️ {RUN_AFTER_FIRST_IMAGE} seconds completed after first image. Stopping receiver...")
     stop_event.set()
 
 
 def on_sample(sample):
-    global timer_started, saved_count
+    global timer_started, saved_count, active_callbacks
+
+    with lock:
+        if not receiver_active or stop_event.is_set():
+            return
+
+        active_callbacks += 1
+
+        if not timer_started:
+            timer_started = True
+            print(f"🟢 First image received. {RUN_AFTER_FIRST_IMAGE}-second counter started.")
+            threading.Thread(
+                target=stop_after_10_seconds,
+                daemon=True
+            ).start()
 
     try:
-        with lock:
-            if not timer_started:
-                timer_started = True
-                print("🟢 First image received. 10-second counter started.")
-                threading.Thread(
-                    target=stop_after_10_seconds,
-                    daemon=True
-                ).start()
+        if stop_event.is_set():
+            return
 
         print(f"📥 Sample received on key: {sample.key_expr}")
 
-        # Your sender sends RAW JPEG bytes
         jpeg_bytes = bytes(sample.payload)
+
+        if stop_event.is_set():
+            return
 
         np_arr = np.frombuffer(jpeg_bytes, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         if image is None:
             print("❌ Could not decode image.")
+            return
+
+        if stop_event.is_set():
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -72,6 +89,18 @@ def on_sample(sample):
 
     except Exception as e:
         print(f"❌ Error processing image: {e}")
+
+    finally:
+        with lock:
+            active_callbacks -= 1
+            if active_callbacks == 0:
+                callbacks_done.notify_all()
+
+
+def wait_for_callbacks_to_finish():
+    with lock:
+        while active_callbacks > 0:
+            callbacks_done.wait(timeout=0.5)
 
 
 def folder_stats_and_delete(folder):
@@ -162,8 +191,12 @@ for loop_number in range(1, NUMBER_OF_LOOPS + 1):
     print(f"🚀 Starting Zenoh loop {loop_number}/{NUMBER_OF_LOOPS}")
     print("==============================")
 
-    timer_started = False
-    saved_count = 0
+    with lock:
+        timer_started = False
+        saved_count = 0
+        receiver_active = True
+        active_callbacks = 0
+
     stop_event.clear()
 
     print(f"🚀 Starting Zenoh listener on {LISTEN_ENDPOINT}")
@@ -184,9 +217,22 @@ for loop_number in range(1, NUMBER_OF_LOOPS + 1):
             time.sleep(0.1)
 
     finally:
-        subscriber.undeclare()
-        session.close()
-        print("🔌 Zenoh session closed.")
+        with lock:
+            receiver_active = False
+
+        try:
+            subscriber.undeclare()
+        except Exception as e:
+            print(f"⚠️ Error undeclaring subscriber: {e}")
+
+        try:
+            session.close()
+        except Exception as e:
+            print(f"⚠️ Error closing Zenoh session: {e}")
+
+        wait_for_callbacks_to_finish()
+
+        print("🔌 Zenoh session closed. No more images will be saved.")
 
     total_images, total_size_mb, images_per_sec, mb_per_sec = folder_stats_and_delete(output_base)
 
