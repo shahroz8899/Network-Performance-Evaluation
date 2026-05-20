@@ -150,7 +150,7 @@ def main():
     finally:
         cap.release()
         try:
-            producer.flush(5)
+            producer.close(timeout=0)
         except Exception:
             pass
 
