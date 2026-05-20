@@ -1,8 +1,4 @@
-Nice, now we know the Pi is **Debian 12 (bookworm)**, so I’ll write the README for that setup and what you already did on the NUC.
 
-Below is a **teaching-style README** you can save as `README.md` and reuse on other systems.
-
----
 
 # Image Streaming with Kafka (Pi → NUC)
 
