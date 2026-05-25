@@ -1,351 +1,668 @@
-#  High-Throughput HTTP Image Streaming with Raspberry Pis**
-
-## **📌 Project Overview**
-
-This project investigates the **performance limitations of an HTTP-based high-throughput image transmission pipeline**, where multiple **Raspberry Pis act as publishers**, capturing camera frames and sending them via HTTP to one or more **worker nodes (subscribers)** on a local network.
-
-The goal is to measure **what becomes the bottleneck** when streaming large volumes of images:
-
-### **1️⃣ The Network Medium?**
-
-* 5 GHz Wi-Fi
-* Ethernet LAN
 
 
-### **2️⃣ The HTTP Middleware Stack?**
+````markdown
+# HTTP Image Transmission Benchmark
 
-* One sender → one worker
-* Multiple senders → one shared worker
-* Pairs of senders and receivers (independent pipelines)
-* Parallel vs competing HTTP pipelines
+This project is used to test image transmission between Raspberry Pi sender devices and receiver machines using HTTP.
 
-Each Raspberry Pi captures **480p JPEG images (~60–70 KB)** and sends them through HTTP at high rates, controlled by a scaling parameter (`MULTIPLY_FACTOR`).
-Worker nodes measure the **actual throughput (images/second)** received under each scenario.
+The sender captures images from a camera, converts each image into Base64 format, and sends it as a JSON HTTP POST request to one or more receiver machines.
 
----
+The receiver accepts incoming images, saves them temporarily, measures the received data rate, writes the results to a CSV file, and deletes the images after each test loop.
 
-# **📂 Project Structure**
+This setup is useful for testing:
 
-```
-.
-│
-├── image_capture_http.py      # Raspberry Pi side (sender)
-├── images_receiver_http.py    # Worker node (receiver)
-├── image_counter.txt          # Persistent counter for filenames
-└── analyzed_images/           # Saved images (auto-created)
-```
+- One sender to one receiver
+- One sender to multiple receivers
+- Multiple senders to one receiver
+- Multiple independent sender-receiver pipelines
+
+The receiver measures:
+
+- Total received images
+- Total received data in MB
+- Images per second
+- MB per second
+- Stability across 50 repeated loops
 
 ---
 
-# **📘 Script Documentation**
+## 2. How it works
+
+The system uses direct HTTP communication.
+
+```text
+Sender Pi  --->  HTTP POST  --->  Receiver
+````
+
+There is no broker in HTTP.
+
+This means the sender must know the receiver address directly.
+
+Example receiver URL:
+
+```python
+"http://###.###.###.###:8000/upload"
+```
+
+The sender sends JSON data like this:
+
+```json
+{
+  "topic": "images/pi1",
+  "filename": "image_0001.jpg",
+  "image_b64": "base64_encoded_image_data"
+}
+```
+
+The receiver listens on:
+
+```text
+0.0.0.0:8000
+```
+
+and accepts requests at:
+
+```text
+/upload
+```
 
 ---
 
-## **1) images_receiver_http.py — Worker/Subscriber**
+## 3. Folder structure
 
-This script receives images over HTTP, decodes them, and saves them to disk.
+Recommended structure:
 
-### **Main Responsibilities**
-
-✔ Start an HTTP server (`/upload` endpoint)
-✔ Accept JSON POST requests containing:
-
-* `topic`
-* `filename`
-* `image_b64` (base64 JPEG)
-  ✔ Queue each incoming frame
-  ✔ A background worker thread decodes & saves images
-  ✔ Stores files in `./analyzed_images/` with timestamped names
-
-### **Why it uses a queue**
-
-The HTTP layer stays lightweight and fast.
-Heavy CPU tasks (JPEG decoding, file I/O) run in a background thread.
-
-This prevents slowdowns and keeps measured ingestion rate accurate.
+```text
+HTTP/
+├── sender.py
+├── receiver.py
+├── requirements.txt
+├── image_counter.txt
+├── image_capture_http.log
+├── analyzed_images_http/
+└── http_receiver_results.csv
+```
 
 ---
 
-## **2) image_capture_http.py — Raspberry Pi Publisher**
+## 4. Create a Python virtual environment
 
-This script captures camera frames, encodes them, and sends them repeatedly via HTTP.
-
-### **Main Steps**
-
-1. Capture image from Pi camera (`cv2.VideoCapture`)
-2. Encode to JPEG with quality=95
-3. Convert JPEG → Base64
-4. Send the same image **multiple times**
-5. Repeat for the duration of the run
-
-### **Transmission Scaling with `MULTIPLY_FACTOR`**
-
-```
-Total HTTP POSTs per frame = REPLICAS × MULTIPLY_FACTOR
-```
-
-* `REPLICAS`: Number of different topics
-* `MULTIPLY_FACTOR`: How many repeated sends per topic
-* Increasing `MULTIPLY_FACTOR` increases:
-
-  * Requests/sec
-  * Network load
-  * Worker pressure
-  * Throughput measurement resolution
-
-Example with default settings:
-
-```
-REPLICAS = 1
-MULTIPLY_FACTOR = 20
-→ 20 image POSTs per captured frame
-```
-
-If you increase:
-
-```
-MULTIPLY_FACTOR = 200
-→ 200 POSTs per frame (10× traffic)
-```
-
-This lets you artificially stress-test the network **without increasing camera FPS**.
-
----
-
-# **🛠️ Setup Instructions**
-
----
-
-## **1️⃣ Create a Python Virtual Environment**
-
-On all machines (Pis + workers):
+Run this on every sender and receiver machine.
 
 ```bash
 python3 -m venv venv
+```
+
+Activate it:
+
+```bash
 source venv/bin/activate
 ```
 
-On Windows:
+After activation, the terminal should show:
 
-```cmd
-venv\Scripts\activate
+```bash
+(venv)
+```
+
+Upgrade pip:
+
+```bash
+python3 -m pip install --upgrade pip
 ```
 
 ---
 
-## **2️⃣ Install Dependencies**
+## 5. Install requirements
+
+Install the required packages:
 
 ```bash
-pip install opencv-python requests numpy
+pip install opencv-python numpy requests
 ```
 
-The receiver also needs:
+The receiver needs:
 
 ```bash
-pip install pillow
+pip install opencv-python numpy
+```
+
+The sender needs:
+
+```bash
+pip install opencv-python requests
+```
+
+A simple `requirements.txt` can be:
+
+```text
+opencv-python
+numpy
+requests
+```
+
+Install using:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ---
 
-# **🚀 Running the Scripts**
+## 6. Receiver script configuration
 
----
-
-## **Start the Receiver (Worker Node)**
-
-On the worker machine:
-
-```bash
-python3 images_receiver_http.py
-```
-
-It will start listening on:
-
-```
-http://0.0.0.0:8000/upload
-```
-
-You can change the port in:
+In `receiver.py`, check these settings:
 
 ```python
-run_server(host="0.0.0.0", port=8000)
+HOST = "0.0.0.0"
+PORT = 8000
 ```
 
----
+The receiver will listen on all network interfaces.
 
-## **Start the Sender (Raspberry Pi)**
-
-Edit this line in `image_capture_http.py`:
+The benchmark settings are:
 
 ```python
-HTTP_SERVER = "http://<WORKER_IP>:8000/upload"
+RUN_AFTER_FIRST_IMAGE = 10
+NUMBER_OF_LOOPS = 50
+FIRST_IMAGE_TIMEOUT = 60
 ```
 
-Then run:
+Meaning:
 
-```bash
-python3 image_capture_http.py
-```
+* Each loop starts when the first image arrives
+* Each loop runs for 10 seconds
+* The test repeats 50 times
+* If no image arrives within 60 seconds, the loop is marked as no image received
 
----
+The receiver saves results in:
 
-# **📡 Experimental Scenarios**
-
-Below are the experiment configurations and how to run them.
-
----
-
-# **🟦 Case 1 — 1 Pi → 1 Worker (Single HTTP Pipeline)**
-
-### Setup
-
-One Pi sends images to **one worker**.
-
-### Steps
-
-Receiver (Worker):
-
-```bash
-python3 images_receiver_http.py   # on Worker1 (IP: 192.168.1.100)
-```
-
-Sender (Pi):
-
-```
-HTTP_SERVER = "http://192.168.1.100:8000/upload"
-```
-
-Run:
-
-```bash
-python3 image_capture_http.py
+```text
+http_receiver_results.csv
 ```
 
 ---
 
-# **🟩 Case 2 — 2 Pis → 1 Worker (Shared HTTP Pipeline)**
+## 7. Sender script configuration
 
-Both Pis send to the **same worker IP + port**.
-
-### Receiver:
-
-```bash
-python3 images_receiver_http.py   # Worker IP: 192.168.1.100
-```
-
-### Sender (Pi #1):
-
-```
-HTTP_SERVER = "http://192.168.1.100:8000/upload"
-```
-
-### Sender (Pi #2):
-
-```
-HTTP_SERVER = "http://192.168.1.100:8000/upload"
-```
-
-Both Pis run simultaneously.
-
----
-
-# **🟧 Case 3 — 3 Pis → 1 Worker (Heavy Shared HTTP Load)**
-
-Same as Case 2, but 3 Pis.
-
-All senders target the same worker:
-
-```
-HTTP_SERVER = "http://192.168.1.100:8000/upload"
-```
-
-This tests how well the worker’s single HTTP pipeline scales under contention.
-
----
-
-# **🟪 Case 4 — 2 Pis → 2 Workers (Independent HTTP Pipelines)**
-
-This tests whether the bottleneck is the shared worker or HTTP overhead.
-
-### Workers:
-
-* Worker1 → `192.168.1.100`
-* Worker2 → `192.168.1.101`
-
-### Sender (Pi #1):
-
-```
-HTTP_SERVER = "http://192.168.1.100:8000/upload"
-```
-
-### Sender (Pi #2):
-
-```
-HTTP_SERVER = "http://192.168.1.101:8000/upload"
-```
-
-Two independent pipelines → no contention.
-
----
-
-# **🟥 Case 5 — 3 Pis → 3 Workers (Fully Parallel Pipelines)**
-
-Best-case scenario for high throughput.
-
-### Workers:
-
-* Worker1 → `192.168.1.100`
-* Worker2 → `192.168.1.101`
-* Worker3 → `192.168.1.102`
-
-### Senders:
-
-Pi #1:
-
-```
-HTTP_SERVER = "http://192.168.1.100:8000/upload"
-```
-
-Pi #2:
-
-```
-HTTP_SERVER = "http://192.168.1.101:8000/upload"
-```
-
-Pi #3:
-
-```
-HTTP_SERVER = "http://192.168.1.102:8000/upload"
-```
-
-Each Pi has its **own dedicated worker**.
-
----
-
-# **📊 Throughput Measurement**
-
-Worker nodes measure throughput based on:
-
-* Number of images saved per second
-* Per-topic arrival distribution
-* Timestamp encoded in filenames
-
-You can compute throughput by counting files:
-
-```bash
-ls analyzed_images | wc -l
-```
-
-Or using a Python script for finer timestamp analysis.
-
----
-
-# **⚙️ How to Scale Load (Increasing MULTIPLY_FACTOR)**
-
-Edit in `image_capture_http.py`:
+In `sender.py`, the important part is:
 
 ```python
-MULTIPLY_FACTOR = 20
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+```
+
+Replace:
+
+```text
+###.###.###.###
+```
+
+with the receiver IP address.
+
+Common sender settings:
+
+```python
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+RUN_DURATION = 700
+```
+
+Explanation:
+
+| Setting           | Meaning                                 |
+| ----------------- | --------------------------------------- |
+| `HTTP_SERVERS`    | List of receivers                       |
+| `TOPIC_BASE`      | Topic name included in the JSON payload |
+| `REPLICAS`        | Creates extra topic names if needed     |
+| `MULTIPLY_FACTOR` | Sends the same image multiple times     |
+| `RUN_DURATION`    | How long the sender runs                |
+
+For normal experiments, use:
+
+```python
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+---
+
+## 8. How to run
+
+### Step 1: Start receiver
+
+On each receiver machine:
+
+```bash
+source venv/bin/activate
+python3 receiver.py
+```
+
+Expected output:
+
+```text
+HTTP image receiver running on 0.0.0.0:8000
+POST images as JSON to /upload
+```
+
+### Step 2: Start sender
+
+On each sender Pi:
+
+```bash
+source venv/bin/activate
+python3 sender.py
+```
+
+---
+
+# 9. Test cases
+
+## Case 1: One Sender to One Receiver
+
+### Architecture
+
+```text
+Pi 1  --->  Receiver 1
+```
+
+### Sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Run order
+
+```text
+1. Start receiver.py on Receiver 1
+2. Start sender.py on Pi 1
+3. Collect http_receiver_results.csv from Receiver 1
+```
+
+---
+
+## Case 2: One Sender to Two Receivers
+
+### Architecture
+
+```text
+          ---> Receiver 1
+Pi 1
+          ---> Receiver 2
+```
+
+### Sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Receiver configuration
+
+Run the same `receiver.py` on both receiver machines.
+
+### Run order
+
+```text
+1. Start receiver.py on Receiver 1
+2. Start receiver.py on Receiver 2
+3. Start sender.py on Pi 1
+4. Collect one CSV file from each receiver
+```
+
+---
+
+## Case 3: One Sender to Three Receivers
+
+### Architecture
+
+```text
+          ---> Receiver 1
+Pi 1      ---> Receiver 2
+          ---> Receiver 3
+```
+
+### Sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+    "http://###.###.###.###:8000/upload",
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Run order
+
+```text
+1. Start receiver.py on all three receivers
+2. Start sender.py on Pi 1
+3. Collect CSV files from all receivers
+```
+
+---
+
+## Case 4: Two Senders to One Receiver
+
+### Architecture
+
+```text
+Pi 1  --->
+          Receiver 1
+Pi 2  --->
+```
+
+### Pi 1 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Pi 2 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+Both senders use the same receiver URL.
+
+### Run order
+
+```text
+1. Start receiver.py on Receiver 1
+2. Start sender.py on Pi 1
+3. Start sender.py on Pi 2
+4. Collect CSV file from Receiver 1
+```
+
+The receiver measures the combined traffic from both Pis.
+
+---
+
+## Case 5: Two Senders to Two Receivers
+
+### Architecture
+
+```text
+Pi 1  --->  Receiver 1
+
+Pi 2  --->  Receiver 2
+```
+
+This uses two independent HTTP pipelines.
+
+### Pi 1 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Pi 2 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+Each Pi uses a different receiver IP.
+
+### Run order
+
+```text
+1. Start receiver.py on Receiver 1
+2. Start receiver.py on Receiver 2
+3. Start sender.py on Pi 1
+4. Start sender.py on Pi 2
+5. Collect one CSV file from each receiver
+```
+
+---
+
+## Case 6: Three Senders to One Receiver
+
+### Architecture
+
+```text
+Pi 1  --->
+Pi 2  --->  Receiver 1
+Pi 3  --->
+```
+
+### All sender configurations
+
+Each Pi uses the same receiver URL:
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Run order
+
+```text
+1. Start receiver.py on Receiver 1
+2. Start sender.py on Pi 1
+3. Start sender.py on Pi 2
+4. Start sender.py on Pi 3
+5. Collect CSV file from Receiver 1
+```
+
+The receiver measures the total received traffic from all three senders.
+
+---
+
+## Case 7: Three Senders to Three Receivers
+
+### Architecture
+
+```text
+Pi 1  --->  Receiver 1
+
+Pi 2  --->  Receiver 2
+
+Pi 3  --->  Receiver 3
+```
+
+This uses three independent HTTP pipelines.
+
+### Pi 1 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+```
+
+### Pi 2 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+```
+
+### Pi 3 sender configuration
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+```
+
+Each Pi points to its own receiver.
+
+Use the same general settings:
+
+```python
+TOPIC_BASE = "images/pi1"
+REPLICAS = 1
+MULTIPLY_FACTOR = 1
+```
+
+### Run order
+
+```text
+1. Start receiver.py on Receiver 1
+2. Start receiver.py on Receiver 2
+3. Start receiver.py on Receiver 3
+4. Start sender.py on Pi 1
+5. Start sender.py on Pi 2
+6. Start sender.py on Pi 3
+7. Collect CSV files from all receivers
+```
+
+---
+
+# 10. Output files
+
+Each receiver creates:
+
+```text
+http_receiver_results.csv
+```
+
+This file contains:
+
+```text
+loop_number
+run_duration_seconds
+total_images
+total_size_mb
+images_per_second
+mb_per_second
+timestamp
+status
+```
+
+At the bottom of the CSV file, average values are also written.
+
+Recommended naming after each test:
+
+```text
+Case_1_One_to_One_http_receiver_results.csv
+Case_2_One_to_Two_receiver_1.csv
+Case_2_One_to_Two_receiver_2.csv
+Case_3_One_to_Three_receiver_1.csv
+Case_3_One_to_Three_receiver_2.csv
+Case_3_One_to_Three_receiver_3.csv
+```
+
+---
+
+# 11. Notes
+
+* Start receivers before senders.
+* Make sure the receiver port is open.
+* Default port is `8000`.
+* HTTP does not use a broker.
+* Sender must contain the receiver URL.
+* For one-to-many tests, add multiple receiver URLs in `HTTP_SERVERS`.
+* For many-to-one tests, all senders use the same receiver URL.
+* For independent pipelines, each sender points to its own receiver.
+
+---
+
+# 12. Troubleshooting
+
+## Receiver not getting images
+
+Check that the receiver is running:
+
+```bash
+python3 receiver.py
+```
+
+Check that the sender has the correct receiver IP:
+
+```python
+HTTP_SERVERS = [
+    "http://###.###.###.###:8000/upload",
+]
+```
+
+Test the port:
+
+```bash
+nc -vz ###.###.###.### 8000
+```
+
+## Port already in use
+
+If port `8000` is already used, change the receiver port:
+
+```python
+PORT = 8001
+```
+
+Then update the sender URL:
+
+```python
+"http://###.###.###.###:8001/upload"
+```
+
+
+---
+
+# 13. Experiment checklist
+
+Before each test:
+
+```text
+1. Confirm correct HTTP_SERVERS in sender.py
+2. Confirm receiver.py is running on each required receiver
+3. Confirm port 8000 is reachable
+4. Run sender.py on required Pis
+5. Wait until receiver completes 50 loops
+6. Rename and save CSV result files
+7. Clear old logs/images if needed
 ```
 
 
