@@ -7,31 +7,41 @@ import cv2
 import aiocoap
 
 
+# ===== CoAP receivers =====
 COAP_SERVERS = [
     {
         "ip": "###.###.###.###",
         "port": 5683,
         "path_segments": ["office", "pi1", "image"]
     },
-    {
-        "ip": "###.###.###.###",
-        "port": 5683,
-        "path_segments": ["office", "pi1", "image"]
-    },
-    {
-        "ip": "###.###.###.###",
-        "port": 5683,
-        "path_segments": ["office", "pi1", "image"]
-    },
+
+    # {
+    #     "ip": "###.###.###.###",
+    #     "port": 5684,
+    #     "path_segments": ["office", "pi2", "image"]
+    # },
+
+    # {
+    #     "ip": "###.###.###.###",
+    #     "port": 5685,
+    #     "path_segments": ["office", "pi3", "image"]
+    # },
 ]
 
 REPLICAS = 1
-MULTIPLY_FACTOR = 10
-RUN_DURATION = 10000
+MULTIPLY_FACTOR = 1
+RUN_DURATION = 700
 
 SAVE_TO_DISK = False
 PROCESSED_FOLDER = "sent_images"
 IMAGE_COUNTER_FILE = "image_counter.txt"
+
+JPEG_QUALITY = 95
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 480
+
+SEND_DELAY = 0.001
+
 
 logging.basicConfig(
     filename="image_capture_coap.log",
@@ -73,16 +83,21 @@ def build_uris(server, replicas):
     return uris
 
 
+async def consume_response_safely(response_task, uri):
+    try:
+        await response_task
+    except Exception as e:
+        logging.warning(f"CoAP response ignored/failed from {uri}: {e}")
+
+
 async def coap_publisher():
-    print("[CoAP] Starting sender")
+    print("[CoAP] Starting fire-and-forget sender")
 
     context = await aiocoap.Context.create_client_context()
 
     all_uris = []
-
     for server in COAP_SERVERS:
-        uris = build_uris(server, REPLICAS)
-        all_uris.extend(uris)
+        all_uris.extend(build_uris(server, REPLICAS))
 
     print("[CoAP] Sending to:")
     for uri in all_uris:
@@ -91,13 +106,13 @@ async def coap_publisher():
     os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
     cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
     time.sleep(0.1)
 
     if not cap.isOpened():
-        print("❌ Camera could not be opened.")
+        print("[ERROR] Camera could not be opened")
         return
 
     start_time = time.time()
@@ -116,18 +131,18 @@ async def coap_publisher():
             ret, frame = cap.read()
 
             if not ret:
-                print("❌ Frame capture failed.")
+                print("[ERROR] Frame capture failed")
                 time.sleep(0.1)
                 continue
 
             ok, buf = cv2.imencode(
                 ".jpg",
                 frame,
-                [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+                [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
             )
 
             if not ok:
-                print("❌ JPEG encoding failed.")
+                print("[ERROR] JPEG encoding failed")
                 continue
 
             jpeg_bytes = buf.tobytes()
@@ -136,30 +151,24 @@ async def coap_publisher():
 
             for uri in all_uris:
                 for i in range(MULTIPLY_FACTOR):
-                    if time.time() - start_time > RUN_DURATION:
-                        break
-
                     request = aiocoap.Message(
                         code=aiocoap.PUT,
                         uri=uri,
-                        payload=jpeg_bytes
+                        payload=jpeg_bytes,
+                        mtype=aiocoap.NON
                     )
 
                     try:
-                        await asyncio.wait_for(
-                            context.request(request).response,
-                            timeout=5.0
+                        protocol_request = context.request(request)
+
+                        asyncio.create_task(
+                            consume_response_safely(protocol_request.response, uri)
                         )
+
                         total_requests += 1
 
-                        logging.info(
-                            f"CoAP PUT {i + 1}/{MULTIPLY_FACTOR} "
-                            f"of {filename} to {uri}"
-                        )
-
                     except Exception as e:
-                        logging.error(f"CoAP PUT failed to {uri}: {e}")
-                        print(f"⚠️ CoAP PUT failed to {uri}: {e}")
+                        logging.warning(f"CoAP send call failed for {uri}: {e}")
 
             if SAVE_TO_DISK:
                 try:
@@ -172,11 +181,11 @@ async def coap_publisher():
             update_image_number(IMAGE_COUNTER_FILE, image_number + 1)
 
             print(
-                f"CoAP PUTs: {total_requests} | "
+                f"CoAP fire-and-forget PUTs queued: {total_requests} | "
                 f"Total loop: {time.time() - loop_start:.4f}s"
             )
 
-            await asyncio.sleep(0.001)
+            await asyncio.sleep(SEND_DELAY)
 
     except KeyboardInterrupt:
         print("Stopped by user.")
