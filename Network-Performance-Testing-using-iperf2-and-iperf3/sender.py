@@ -6,6 +6,8 @@ from datetime import datetime
 
 
 # ===== Test Targets =====
+# For one sender to one receiver: keep one target.
+# For one sender to multiple receivers: uncomment/add more targets.
 IPERF_TARGETS = [
     {
         "ip": "###.###.###.###",
@@ -67,8 +69,10 @@ def run_iperf_test(target):
                 "status": "failed",
                 "sender_transfer_mb": 0,
                 "sender_mbits_per_sec": 0,
+                "sender_MB_per_sec": 0,
                 "receiver_transfer_mb": 0,
                 "receiver_mbits_per_sec": 0,
+                "receiver_MB_per_sec": 0,
                 "retransmits": 0,
                 "error": result.stderr.strip()
             }
@@ -101,18 +105,31 @@ def run_iperf_test(target):
                 "status": "failed",
                 "sender_transfer_mb": 0,
                 "sender_mbits_per_sec": 0,
+                "sender_MB_per_sec": 0,
                 "receiver_transfer_mb": 0,
                 "receiver_mbits_per_sec": 0,
+                "receiver_MB_per_sec": 0,
                 "retransmits": 0,
                 "error": "iperf3 returned zero traffic"
             }
 
+        sender_transfer_mb = sender_bytes / 1024 / 1024
+        receiver_transfer_mb = receiver_bytes / 1024 / 1024
+
+        sender_mbits_per_sec = sender_bps / 1000 / 1000
+        receiver_mbits_per_sec = receiver_bps / 1000 / 1000
+
+        sender_MB_per_sec = sender_transfer_mb / TEST_DURATION
+        receiver_MB_per_sec = receiver_transfer_mb / TEST_DURATION
+
         return {
             "status": "success",
-            "sender_transfer_mb": sender_bytes / 1024 / 1024,
-            "sender_mbits_per_sec": sender_bps / 1000 / 1000,
-            "receiver_transfer_mb": receiver_bytes / 1024 / 1024,
-            "receiver_mbits_per_sec": receiver_bps / 1000 / 1000,
+            "sender_transfer_mb": sender_transfer_mb,
+            "sender_mbits_per_sec": sender_mbits_per_sec,
+            "sender_MB_per_sec": sender_MB_per_sec,
+            "receiver_transfer_mb": receiver_transfer_mb,
+            "receiver_mbits_per_sec": receiver_mbits_per_sec,
+            "receiver_MB_per_sec": receiver_MB_per_sec,
             "retransmits": retransmits,
             "error": ""
         }
@@ -122,8 +139,10 @@ def run_iperf_test(target):
             "status": "failed",
             "sender_transfer_mb": 0,
             "sender_mbits_per_sec": 0,
+            "sender_MB_per_sec": 0,
             "receiver_transfer_mb": 0,
             "receiver_mbits_per_sec": 0,
+            "receiver_MB_per_sec": 0,
             "retransmits": 0,
             "error": str(e)
         }
@@ -145,8 +164,10 @@ def write_csv(results):
             "duration_seconds",
             "sender_transfer_mb",
             "sender_mbits_per_second",
+            "sender_MB_per_second",
             "receiver_transfer_mb",
             "receiver_mbits_per_second",
+            "receiver_MB_per_second",
             "retransmits",
             "timestamp",
             "status",
@@ -163,8 +184,10 @@ def write_csv(results):
                 r["duration_seconds"],
                 f"{r.get('sender_transfer_mb', 0):.2f}",
                 f"{r.get('sender_mbits_per_sec', 0):.2f}",
+                f"{r.get('sender_MB_per_sec', 0):.2f}",
                 f"{r.get('receiver_transfer_mb', 0):.2f}",
                 f"{r.get('receiver_mbits_per_sec', 0):.2f}",
+                f"{r.get('receiver_MB_per_sec', 0):.2f}",
                 r.get("retransmits", 0),
                 r["timestamp"],
                 r["status"],
@@ -187,8 +210,12 @@ def write_csv(results):
 
             avg_sender_mb = sum(r["sender_transfer_mb"] for r in successful) / len(successful)
             avg_sender_mbps = sum(r["sender_mbits_per_sec"] for r in successful) / len(successful)
+            avg_sender_MBps = sum(r["sender_MB_per_sec"] for r in successful) / len(successful)
+
             avg_receiver_mb = sum(r["receiver_transfer_mb"] for r in successful) / len(successful)
             avg_receiver_mbps = sum(r["receiver_mbits_per_sec"] for r in successful) / len(successful)
+            avg_receiver_MBps = sum(r["receiver_MB_per_sec"] for r in successful) / len(successful)
+
             avg_retransmits = sum(r["retransmits"] for r in successful) / len(successful)
 
             writer.writerow([
@@ -197,10 +224,14 @@ def write_csv(results):
                 f"{avg_sender_mb:.2f}",
                 "avg_sender_mbits_per_second",
                 f"{avg_sender_mbps:.2f}",
+                "avg_sender_MB_per_second",
+                f"{avg_sender_MBps:.2f}",
                 "avg_receiver_transfer_mb",
                 f"{avg_receiver_mb:.2f}",
                 "avg_receiver_mbits_per_second",
                 f"{avg_receiver_mbps:.2f}",
+                "avg_receiver_MB_per_second",
+                f"{avg_receiver_MBps:.2f}",
                 "avg_retransmits",
                 f"{avg_retransmits:.2f}"
             ])
@@ -244,11 +275,13 @@ def main():
                 if result["status"] == "success":
                     print(
                         f"Sender: {result['sender_transfer_mb']:.2f} MB, "
-                        f"{result['sender_mbits_per_sec']:.2f} Mbits/sec"
+                        f"{result['sender_mbits_per_sec']:.2f} Mbits/sec, "
+                        f"{result['sender_MB_per_sec']:.2f} MB/sec"
                     )
                     print(
                         f"Receiver: {result['receiver_transfer_mb']:.2f} MB, "
-                        f"{result['receiver_mbits_per_sec']:.2f} Mbits/sec"
+                        f"{result['receiver_mbits_per_sec']:.2f} Mbits/sec, "
+                        f"{result['receiver_MB_per_sec']:.2f} MB/sec"
                     )
                     print(f"Retransmits: {result['retransmits']}")
                 else:
