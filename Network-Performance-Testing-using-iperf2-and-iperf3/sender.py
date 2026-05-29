@@ -6,8 +6,6 @@ from datetime import datetime
 
 
 # ===== Test Targets =====
-# For one receiver, keep one target.
-# For one-to-many, add more targets.
 IPERF_TARGETS = [
     {
         "ip": "###.###.###.###",
@@ -32,11 +30,11 @@ IPERF_TARGETS = [
 # ===== Benchmark Settings =====
 TEST_DURATION = 10
 NUMBER_OF_LOOPS = 50
+
 PROTOCOL = "tcp"       # tcp or udp
 UDP_BITRATE = "100M"  # only used if PROTOCOL = "udp"
 
 CSV_FILE = "iperf3_sender_results.csv"
-
 
 all_results = []
 
@@ -61,34 +59,53 @@ def run_iperf_test(target):
             cmd,
             capture_output=True,
             text=True,
-            timeout=TEST_DURATION + 10
+            timeout=TEST_DURATION + 15
         )
 
         if result.returncode != 0:
             return {
                 "status": "failed",
+                "sender_transfer_mb": 0,
+                "sender_mbits_per_sec": 0,
+                "receiver_transfer_mb": 0,
+                "receiver_mbits_per_sec": 0,
+                "retransmits": 0,
                 "error": result.stderr.strip()
             }
 
         data = json.loads(result.stdout)
-
         end_data = data.get("end", {})
 
-        sender = None
-        receiver = None
-
-        if PROTOCOL.lower() == "tcp":
-            sender = end_data.get("sum_sent", {})
-            receiver = end_data.get("sum_received", {})
-        else:
-            sender = end_data.get("sum", {})
-            receiver = end_data.get("sum", {})
+        sender = end_data.get("sum_sent", {})
+        receiver = end_data.get("sum_received", {})
 
         sender_bytes = sender.get("bytes", 0)
         sender_bps = sender.get("bits_per_second", 0)
         receiver_bytes = receiver.get("bytes", 0)
         receiver_bps = receiver.get("bits_per_second", 0)
         retransmits = sender.get("retransmits", 0)
+
+        # Fallback for iperf3 versions that store results inside streams
+        if sender_bytes == 0 and "streams" in end_data and len(end_data["streams"]) > 0:
+            stream_sender = end_data["streams"][0].get("sender", {})
+            stream_receiver = end_data["streams"][0].get("receiver", {})
+
+            sender_bytes = stream_sender.get("bytes", 0)
+            sender_bps = stream_sender.get("bits_per_second", 0)
+            receiver_bytes = stream_receiver.get("bytes", 0)
+            receiver_bps = stream_receiver.get("bits_per_second", 0)
+            retransmits = stream_sender.get("retransmits", 0)
+
+        if sender_bytes == 0 and receiver_bytes == 0:
+            return {
+                "status": "failed",
+                "sender_transfer_mb": 0,
+                "sender_mbits_per_sec": 0,
+                "receiver_transfer_mb": 0,
+                "receiver_mbits_per_sec": 0,
+                "retransmits": 0,
+                "error": "iperf3 returned zero traffic"
+            }
 
         return {
             "status": "success",
@@ -103,6 +120,11 @@ def run_iperf_test(target):
     except Exception as e:
         return {
             "status": "failed",
+            "sender_transfer_mb": 0,
+            "sender_mbits_per_sec": 0,
+            "receiver_transfer_mb": 0,
+            "receiver_mbits_per_sec": 0,
+            "retransmits": 0,
             "error": str(e)
         }
 
