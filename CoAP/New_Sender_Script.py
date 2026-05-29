@@ -7,31 +7,45 @@ import cv2
 import aiocoap
 
 
+# ===== Receiver list =====
+# For many-to-one: keep only one receiver here on every sender.
+# For one-to-many: uncomment/add more receivers.
 COAP_SERVERS = [
     {
-        "ip": "###.###.###.###",
+        "ip": "192.168.1.135",
         "port": 5683,
         "path_segments": ["office", "pi1", "image"]
     },
-    {
-        "ip": "###.###.###.###",
-        "port": 5683,
-        "path_segments": ["office", "pi1", "image"]
-    },
-    {
-        "ip": "###.###.###.###",
-        "port": 5683,
-        "path_segments": ["office", "pi1", "image"]
-    },
+
+    # {
+    #     "ip": "192.168.1.177",
+    #     "port": 5684,
+    #     "path_segments": ["office", "pi2", "image"]
+    # },
+
+    # {
+    #     "ip": "192.168.1.81",
+    #     "port": 5685,
+    #     "path_segments": ["office", "pi3", "image"]
+    # },
 ]
 
 REPLICAS = 1
 MULTIPLY_FACTOR = 1
-RUN_DURATION = 700
+RUN_DURATION = 10000
+
+REQUEST_TIMEOUT = 2.0
+MAX_FAILURES_BEFORE_RECONNECT = 5
+PAUSE_AFTER_RECONNECT = 0.5
+
+FRAME_WIDTH = 640
+FRAME_HEIGHT = 480
+JPEG_QUALITY = 95
 
 SAVE_TO_DISK = False
 PROCESSED_FOLDER = "sent_images"
 IMAGE_COUNTER_FILE = "image_counter.txt"
+
 
 logging.basicConfig(
     filename="image_capture_coap.log",
@@ -58,9 +72,6 @@ def build_uris(server, replicas):
     port = server["port"]
     path_segments = server["path_segments"]
 
-    if replicas <= 0:
-        return []
-
     base_path = "/".join(path_segments)
     uris = [f"coap://{ip}:{port}/{base_path}"]
 
@@ -73,16 +84,26 @@ def build_uris(server, replicas):
     return uris
 
 
+async def create_context():
+    print("[CoAP] Creating/recreating client context...")
+    return await aiocoap.Context.create_client_context()
+
+
+async def safe_shutdown_context(context):
+    try:
+        await context.shutdown()
+    except Exception:
+        pass
+
+
 async def coap_publisher():
     print("[CoAP] Starting sender")
 
-    context = await aiocoap.Context.create_client_context()
+    context = await create_context()
 
     all_uris = []
-
     for server in COAP_SERVERS:
-        uris = build_uris(server, REPLICAS)
-        all_uris.extend(uris)
+        all_uris.extend(build_uris(server, REPLICAS))
 
     print("[CoAP] Sending to:")
     for uri in all_uris:
@@ -91,16 +112,17 @@ async def coap_publisher():
     os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
     cap = cv2.VideoCapture(0)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
 
     time.sleep(0.1)
 
     if not cap.isOpened():
-        print("❌ Camera could not be opened.")
+        print("Camera could not be opened.")
         return
 
     start_time = time.time()
+    consecutive_failures = 0
 
     try:
         while True:
@@ -114,28 +136,27 @@ async def coap_publisher():
             filename = f"image_{image_number:04d}.jpg"
 
             ret, frame = cap.read()
-
             if not ret:
-                print("❌ Frame capture failed.")
+                print("Frame capture failed.")
                 time.sleep(0.1)
                 continue
 
             ok, buf = cv2.imencode(
                 ".jpg",
                 frame,
-                [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+                [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
             )
 
             if not ok:
-                print("❌ JPEG encoding failed.")
+                print("JPEG encoding failed.")
                 continue
 
             jpeg_bytes = buf.tobytes()
-
             total_requests = 0
 
             for uri in all_uris:
                 for i in range(MULTIPLY_FACTOR):
+
                     if time.time() - start_time > RUN_DURATION:
                         break
 
@@ -148,9 +169,11 @@ async def coap_publisher():
                     try:
                         await asyncio.wait_for(
                             context.request(request).response,
-                            timeout=10
+                            timeout=REQUEST_TIMEOUT
                         )
+
                         total_requests += 1
+                        consecutive_failures = 0
 
                         logging.info(
                             f"CoAP PUT {i + 1}/{MULTIPLY_FACTOR} "
@@ -158,8 +181,19 @@ async def coap_publisher():
                         )
 
                     except Exception as e:
+                        consecutive_failures += 1
+
                         logging.error(f"CoAP PUT failed to {uri}: {e}")
-                        print(f"⚠️ CoAP PUT failed to {uri}: {e}")
+                        print(f"CoAP PUT failed to {uri}: {e}")
+
+                        if consecutive_failures >= MAX_FAILURES_BEFORE_RECONNECT:
+                            print("[CoAP] Too many failures. Recreating context...")
+
+                            await safe_shutdown_context(context)
+                            await asyncio.sleep(PAUSE_AFTER_RECONNECT)
+
+                            context = await create_context()
+                            consecutive_failures = 0
 
             if SAVE_TO_DISK:
                 try:
@@ -183,6 +217,7 @@ async def coap_publisher():
 
     finally:
         cap.release()
+        await safe_shutdown_context(context)
         print("Camera released.")
 
 
