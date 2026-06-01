@@ -3,40 +3,34 @@ import json
 import csv
 import time
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-# ===== Test Targets =====
-# For one sender to one receiver: keep one target.
-# For one sender to multiple receivers: uncomment/add more targets.
 IPERF_TARGETS = [
     {
-        "ip": "###.###.###.###",
+        "ip": "192.168.1.##",
         "port": 5201,
-        "name": "receiver_1"
+        "name": "##"
+    },
+    {
+        "ip": "192.168.1.###",
+        "port": 5202,
+        "name": "##"
     },
 
     # {
     #     "ip": "###.###.###.###",
-    #     "port": 5201,
-    #     "name": "receiver_2"
-    # },
-
-    # {
-    #     "ip": "###.###.###.###",
-    #     "port": 5201,
-    #     "name": "receiver_3"
+    #     "port": 5203,
+    #     "name": "##"
     # },
 ]
 
 
-# ===== Benchmark Settings =====
 TEST_DURATION = 10
 NUMBER_OF_LOOPS = 50
+PROTOCOL = "tcp"
 
-PROTOCOL = "tcp"       # tcp or udp
-UDP_BITRATE = "100M"  # only used if PROTOCOL = "udp"
-
-CSV_FILE = "iperf3_sender_results.csv"
+CSV_FILE = "iperf3_parallel_results.csv"
 
 all_results = []
 
@@ -53,15 +47,12 @@ def run_iperf_test(target):
         "-J"
     ]
 
-    if PROTOCOL.lower() == "udp":
-        cmd.extend(["-u", "-b", UDP_BITRATE])
-
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=TEST_DURATION + 15
+            timeout=TEST_DURATION + 20
         )
 
         if result.returncode != 0:
@@ -89,7 +80,6 @@ def run_iperf_test(target):
         receiver_bps = receiver.get("bits_per_second", 0)
         retransmits = sender.get("retransmits", 0)
 
-        # Fallback for iperf3 versions that store results inside streams
         if sender_bytes == 0 and "streams" in end_data and len(end_data["streams"]) > 0:
             stream_sender = end_data["streams"][0].get("sender", {})
             stream_receiver = end_data["streams"][0].get("receiver", {})
@@ -100,19 +90,6 @@ def run_iperf_test(target):
             receiver_bps = stream_receiver.get("bits_per_second", 0)
             retransmits = stream_sender.get("retransmits", 0)
 
-        if sender_bytes == 0 and receiver_bytes == 0:
-            return {
-                "status": "failed",
-                "sender_transfer_mb": 0,
-                "sender_mbits_per_sec": 0,
-                "sender_MB_per_sec": 0,
-                "receiver_transfer_mb": 0,
-                "receiver_mbits_per_sec": 0,
-                "receiver_MB_per_sec": 0,
-                "retransmits": 0,
-                "error": "iperf3 returned zero traffic"
-            }
-
         sender_transfer_mb = sender_bytes / 1024 / 1024
         receiver_transfer_mb = receiver_bytes / 1024 / 1024
 
@@ -122,8 +99,15 @@ def run_iperf_test(target):
         sender_MB_per_sec = sender_transfer_mb / TEST_DURATION
         receiver_MB_per_sec = receiver_transfer_mb / TEST_DURATION
 
+        if sender_bytes == 0 and receiver_bytes == 0:
+            status = "failed"
+            error = "iperf3 returned zero traffic"
+        else:
+            status = "success"
+            error = ""
+
         return {
-            "status": "success",
+            "status": status,
             "sender_transfer_mb": sender_transfer_mb,
             "sender_mbits_per_sec": sender_mbits_per_sec,
             "sender_MB_per_sec": sender_MB_per_sec,
@@ -131,7 +115,7 @@ def run_iperf_test(target):
             "receiver_mbits_per_sec": receiver_mbits_per_sec,
             "receiver_MB_per_sec": receiver_MB_per_sec,
             "retransmits": retransmits,
-            "error": ""
+            "error": error
         }
 
     except Exception as e:
@@ -149,9 +133,6 @@ def run_iperf_test(target):
 
 
 def write_csv(results):
-    if not results:
-        return
-
     with open(CSV_FILE, "w", newline="") as file:
         writer = csv.writer(file)
 
@@ -182,82 +163,67 @@ def write_csv(results):
                 r["target_port"],
                 r["protocol"],
                 r["duration_seconds"],
-                f"{r.get('sender_transfer_mb', 0):.2f}",
-                f"{r.get('sender_mbits_per_sec', 0):.2f}",
-                f"{r.get('sender_MB_per_sec', 0):.2f}",
-                f"{r.get('receiver_transfer_mb', 0):.2f}",
-                f"{r.get('receiver_mbits_per_sec', 0):.2f}",
-                f"{r.get('receiver_MB_per_sec', 0):.2f}",
-                r.get("retransmits", 0),
+                f"{r["sender_transfer_mb"]:.2f}",
+                f"{r["sender_mbits_per_sec"]:.2f}",
+                f"{r["sender_MB_per_sec"]:.2f}",
+                f"{r["receiver_transfer_mb"]:.2f}",
+                f"{r["receiver_mbits_per_sec"]:.2f}",
+                f"{r["receiver_MB_per_sec"]:.2f}",
+                r["retransmits"],
                 r["timestamp"],
                 r["status"],
-                r.get("error", "")
-            ])
-
-        writer.writerow([])
-        writer.writerow(["AVERAGES"])
-
-        target_names = sorted(set(r["target_name"] for r in results))
-
-        for name in target_names:
-            successful = [
-                r for r in results
-                if r["target_name"] == name and r["status"] == "success"
-            ]
-
-            if not successful:
-                continue
-
-            avg_sender_mb = sum(r["sender_transfer_mb"] for r in successful) / len(successful)
-            avg_sender_mbps = sum(r["sender_mbits_per_sec"] for r in successful) / len(successful)
-            avg_sender_MBps = sum(r["sender_MB_per_sec"] for r in successful) / len(successful)
-
-            avg_receiver_mb = sum(r["receiver_transfer_mb"] for r in successful) / len(successful)
-            avg_receiver_mbps = sum(r["receiver_mbits_per_sec"] for r in successful) / len(successful)
-            avg_receiver_MBps = sum(r["receiver_MB_per_sec"] for r in successful) / len(successful)
-
-            avg_retransmits = sum(r["retransmits"] for r in successful) / len(successful)
-
-            writer.writerow([
-                name,
-                "avg_sender_transfer_mb",
-                f"{avg_sender_mb:.2f}",
-                "avg_sender_mbits_per_second",
-                f"{avg_sender_mbps:.2f}",
-                "avg_sender_MB_per_second",
-                f"{avg_sender_MBps:.2f}",
-                "avg_receiver_transfer_mb",
-                f"{avg_receiver_mb:.2f}",
-                "avg_receiver_mbits_per_second",
-                f"{avg_receiver_mbps:.2f}",
-                "avg_receiver_MB_per_second",
-                f"{avg_receiver_MBps:.2f}",
-                "avg_retransmits",
-                f"{avg_retransmits:.2f}"
+                r["error"]
             ])
 
     print(f"CSV saved: {CSV_FILE}")
 
 
+def make_collective_row(loop_number, loop_results):
+    successful = [r for r in loop_results if r["status"] == "success"]
+
+    return {
+        "loop_number": loop_number,
+        "target_name": "COLLECTIVE_TOTAL",
+        "target_ip": "multiple",
+        "target_port": "multiple",
+        "protocol": PROTOCOL,
+        "duration_seconds": TEST_DURATION,
+        "sender_transfer_mb": sum(r["sender_transfer_mb"] for r in successful),
+        "sender_mbits_per_sec": sum(r["sender_mbits_per_sec"] for r in successful),
+        "sender_MB_per_sec": sum(r["sender_MB_per_sec"] for r in successful),
+        "receiver_transfer_mb": sum(r["receiver_transfer_mb"] for r in successful),
+        "receiver_mbits_per_sec": sum(r["receiver_mbits_per_sec"] for r in successful),
+        "receiver_MB_per_sec": sum(r["receiver_MB_per_sec"] for r in successful),
+        "retransmits": sum(r["retransmits"] for r in successful),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "success" if successful else "failed",
+        "error": ""
+    }
+
+
 def main():
-    print("Starting iperf3 raw bandwidth benchmark")
+    print("Starting parallel iperf3 raw bandwidth benchmark")
     print(f"Protocol: {PROTOCOL}")
     print(f"Loops: {NUMBER_OF_LOOPS}")
     print(f"Duration per loop: {TEST_DURATION} seconds")
+    print(f"Parallel targets: {len(IPERF_TARGETS)}")
 
-    try:
-        for loop_number in range(1, NUMBER_OF_LOOPS + 1):
-            print("\n==============================")
-            print(f"Starting loop {loop_number}/{NUMBER_OF_LOOPS}")
-            print("==============================")
+    for loop_number in range(1, NUMBER_OF_LOOPS + 1):
+        print("\n==============================")
+        print(f"Starting loop {loop_number}/{NUMBER_OF_LOOPS}")
+        print("==============================")
 
-            for target in IPERF_TARGETS:
-                print(
-                    f"Testing {target['name']} "
-                    f"{target['ip']}:{target['port']}"
-                )
+        loop_results = []
 
-                result = run_iperf_test(target)
+        with ThreadPoolExecutor(max_workers=len(IPERF_TARGETS)) as executor:
+            future_to_target = {
+                executor.submit(run_iperf_test, target): target
+                for target in IPERF_TARGETS
+            }
+
+            for future in as_completed(future_to_target):
+                target = future_to_target[future]
+                result = future.result()
 
                 row = {
                     "loop_number": loop_number,
@@ -270,33 +236,40 @@ def main():
                     **result
                 }
 
-                all_results.append(row)
+                loop_results.append(row)
 
                 if result["status"] == "success":
                     print(
-                        f"Sender: {result['sender_transfer_mb']:.2f} MB, "
-                        f"{result['sender_mbits_per_sec']:.2f} Mbits/sec, "
-                        f"{result['sender_MB_per_sec']:.2f} MB/sec"
-                    )
-                    print(
-                        f"Receiver: {result['receiver_transfer_mb']:.2f} MB, "
+                        f"{target['name']} receiver: "
+                        f"{result['receiver_transfer_mb']:.2f} MB, "
                         f"{result['receiver_mbits_per_sec']:.2f} Mbits/sec, "
                         f"{result['receiver_MB_per_sec']:.2f} MB/sec"
                     )
-                    print(f"Retransmits: {result['retransmits']}")
                 else:
-                    print(f"Failed: {result['error']}")
+                    print(f"{target['name']} failed: {result['error']}")
 
-                write_csv(all_results)
-                time.sleep(1)
+        collective = make_collective_row(loop_number, loop_results)
+        loop_results.append(collective)
 
-    except KeyboardInterrupt:
-        print("\nStopped by user.")
+        print("\nCollective total:")
+        print(
+            f"Sender total: {collective['sender_transfer_mb']:.2f} MB, "
+            f"{collective['sender_mbits_per_sec']:.2f} Mbits/sec, "
+            f"{collective['sender_MB_per_sec']:.2f} MB/sec"
+        )
+        print(
+            f"Receiver total: {collective['receiver_transfer_mb']:.2f} MB, "
+            f"{collective['receiver_mbits_per_sec']:.2f} Mbits/sec, "
+            f"{collective['receiver_MB_per_sec']:.2f} MB/sec"
+        )
+        print(f"Total retransmits: {collective['retransmits']}")
+
+        all_results.extend(loop_results)
         write_csv(all_results)
 
-    finally:
-        write_csv(all_results)
-        print("iperf3 benchmark finished.")
+        time.sleep(1)
+
+    print("iperf3 parallel benchmark finished.")
 
 
 if __name__ == "__main__":
