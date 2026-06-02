@@ -1,383 +1,681 @@
+# iPerf3 Network Bandwidth Benchmarking Framework
 
+## Overview
 
-# 📘 **Network Performance Testing Report using iperf2 and iperf3**
+This project provides a repeatable framework for measuring the **raw network bandwidth** between distributed systems using **iPerf3**.
 
+Unlike the Kafka, HTTP, MQTT, CoAP, and Zenoh experiments, which transfer actual images and measure application-level performance, this framework measures the **maximum achievable network throughput** between nodes.
 
----
+The goal is to establish a **network baseline** and answer questions such as:
 
-# **1. Introduction**
-
-Network performance evaluation is a critical part of distributed systems research, IoT networks, edge computing, and cluster communication studies.
-This document provides **complete, step-by-step instructions** for conducting bandwidth tests under different scenarios:
-
-1. **One sender → One receiver**
-2. **Multiple senders → One receiver**
-3. **Multiple senders → Multiple receivers**
-
-Both **iperf3** and **iperf2** are covered:
-
-* **iperf3** is newer, but supports **only one client per server instance**
-* **iperf2** allows **multiple simultaneous connections**, ideal for multi-sender stress tests
+* What is the maximum available bandwidth?
+* How stable is the network over repeated runs?
+* How does bandwidth change when multiple senders or receivers are active simultaneously?
+* What is the aggregate throughput of the system?
 
 ---
 
-# **2. Preparing the Environment**
+# Experiment Goals
 
-## **2.1 Supported Operating Systems**
+This benchmark measures:
 
-This guide applies to:
+### Sender Side
 
-* Raspberry Pi OS (Debian-based)
-* Ubuntu/Debian
-* Linux desktops/servers
+* Total data transmitted (MB)
+* Throughput (Mbps)
+* Throughput (MB/s)
+* TCP retransmissions
+
+### Receiver Side
+
+* Total data received (MB)
+* Throughput (Mbps)
+* Throughput (MB/s)
+
+### Collective Metrics
+
+For multi-receiver experiments:
+
+* Total transmitted data
+* Total received data
+* Aggregate throughput
+* Aggregate retransmissions
 
 ---
 
-# **3. Installing and Removing iperf**
+# Test Environment
 
-## **3.1 Install iperf3**
+The framework supports:
 
-Run on any machine (Pi or server):
+### WiFi Experiments
+
+* Case 1: One Sender → One Receiver
+* Case 2: One Sender → Two Receivers
+* Case 3: One Sender → Three Receivers
+* Case 4: Two Senders → One Receiver
+* Case 5: Two Senders → Two Receivers
+* Case 6: Three Senders → One Receiver
+* Case 7: Three Senders → Three Receivers
+
+### LAN Experiments
+
+The same seven configurations are repeated over LAN.
+
+Total:
+
+```text
+7 WiFi Tests
++
+7 LAN Tests
+
+=
+14 Total Experiments
+```
+
+---
+
+# Directory Structure
+
+```text
+iPerf3/
+│
+├── sender.py
+├── receiver.py
+├── iperf3_parallel_results.csv
+├── README.md
+└── venv/
+```
+
+---
+
+# Requirements
+
+Install iPerf3.
+
+### Ubuntu
 
 ```bash
 sudo apt update
-sudo apt install iperf3 -y
-```
-
-Verify installation:
-
-```bash
-iperf3 --version
-```
-
----
-
-## **3.2 Install iperf2**
-
-(needed for multi-sender tests)
-
-```bash
-sudo apt update
-sudo apt install iperf -y
+sudo apt install iperf3
 ```
 
 Verify:
 
 ```bash
-iperf --version
-```
-
----
-
-## **3.3 Remove old or corrupted installations**
-
-If you need to uninstall:
-
-### Remove iperf3:
-
-```bash
-sudo apt remove iperf3 -y
-sudo apt purge iperf3 -y
-```
-
-### Remove iperf2:
-
-```bash
-sudo apt remove iperf -y
-sudo apt purge iperf -y
-```
-
-Clean unused packages:
-
-```bash
-sudo apt autoremove -y
-```
-
----
-
-# **4. Cleaning Old Stuck Processes (VERY IMPORTANT)**
-
-If previous iperf instances crashed, they may still be running.
-
-Check all iperf3 processes:
-
-```bash
-ps aux | grep iperf3
-```
-
-Kill all:
-
-```bash
-sudo killall iperf3
-```
-
-If a PID survives, kill manually:
-
-```bash
-sudo kill -9 <PID>
-```
-
-Repeat for iperf2:
-
-```bash
-sudo killall iperf
-```
-
----
-
-# **5. Network Scenarios and Test Procedures**
-
----
-
-# **Scenario 1: One Sender → One Receiver (Single Flow)**
-
-### Recommended: iperf3
-
-## **5.1 Start server (receiver)**
-
-On the receiver node:
-
-```bash
-iperf3 -s
-```
-
-It listens on port **5201**.
-
----
-
-## **5.2 Start sender (client)**
-
-On sender Pi:
-
-```bash
-iperf3 -c <receiver_ip> -t 10
+iperf3 --version
 ```
 
 Example:
 
-```bash
-iperf3 -c 192.168.1.135 -t 10
+```text
+iperf 3.16
 ```
 
 ---
 
-## **5.3 Optional parameters**
+# Creating a Virtual Environment
 
-* Reverse direction (server → client):
-
-  ```bash
-  iperf3 -c <ip> -R -t 10
-  ```
-
-* Bidirectional test:
-
-  ```bash
-  iperf3 -c <ip> --bidir -t 10
-  ```
-
----
-
-# **Scenario 2: Multiple Senders → One Receiver**
-
-You have **two choices**:
-
----
-
-## **Option A: Using iperf2 (Best and simplest)**
-
-iperf2 supports **multiple clients connecting to one server simultaneously**.
-
-### **Start server once**:
+Although the sender uses only standard Python libraries, it is recommended to create a virtual environment.
 
 ```bash
-iperf -s
+mkdir iperf3-benchmark
+
+cd iperf3-benchmark
+
+python3 -m venv venv
 ```
 
-### **Start clients on each Pi**:
-
-Pi1:
+Activate:
 
 ```bash
-iperf -c <receiver_ip> -t 10
+source venv/bin/activate
 ```
 
-Pi2:
+Verify:
 
 ```bash
-iperf -c <receiver_ip> -t 10
+which python
 ```
 
-Pi3:
+Example:
 
-```bash
-iperf -c <receiver_ip> -t 10
-```
-
-All three run **at the same time**.
-
-✔️ Measures aggregated bandwidth
-✔️ Realistic stress test
-✔️ No port management needed
-
----
-
-## **Option B: Using iperf3 (Multiple ports required)**
-
-Because iperf3 handles only one client at a time per port.
-
-### Start multiple server instances on different ports:
-
-```bash
-iperf3 -s -p 5201 &
-iperf3 -s -p 5202 &
-iperf3 -s -p 5203 &
-```
-
-### Clients:
-
-Pi1 → 5201
-
-```bash
-iperf3 -c <ip> -p 5201 -t 10
-```
-
-Pi2 → 5202
-
-```bash
-iperf3 -c <ip> -p 5202 -t 10
-```
-
-Pi3 → 5203
-
-```bash
-iperf3 -c <ip> -p 5203 -t 10
+```text
+.../venv/bin/python
 ```
 
 ---
 
-# **Scenario 3: Multiple Senders → Multiple Receivers**
+# Receiver Setup
 
-You can use iperf2 or iperf3.
+The receiver starts one or more iPerf3 servers.
 
----
+Example:
 
-## **Option A: iperf2 (simplest)**
-
-Start server on Receiver 1:
-
-```bash
-iperf -s
+```python
+IPERF_PORTS = [
+    5201,
+]
 ```
 
-Start server on Receiver 2:
+Start:
 
 ```bash
-iperf -s -p 5202
+python3 receiver.py
 ```
 
-Start sender flows from multiple Pis:
+Example output:
 
-Pi1 → Receiver1:
+```text
+Starting iperf3 server on port 5201
 
-```bash
-iperf -c <R1_ip> -t 10
-```
-
-Pi2 → Receiver2:
-
-```bash
-iperf -c <R2_ip> -p 5202 -t 10
-```
-
-Pi3 → Receiver1 or Receiver2:
-
-```bash
-iperf -c <R1_ip> -t 10
+iperf3 receiver is running.
+Press CTRL+C to stop.
 ```
 
 ---
 
-## **Option B: iperf3 (port isolation required)**
+# Sender Setup
 
-For each receiver:
+Configure targets:
 
-Receiver1:
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver_1"
+    },
+]
+```
+
+Start:
+
+```bash
+python3 sender.py
+```
+
+---
+
+# Benchmark Parameters
+
+```python
+TEST_DURATION = 10
+NUMBER_OF_LOOPS = 50
+PROTOCOL = "tcp"
+```
+
+Meaning:
+
+```text
+Each run lasts 10 seconds.
+
+Each experiment repeats 50 times.
+
+TCP is used to measure actual available bandwidth.
+```
+
+---
+
+# Why TCP?
+
+TCP automatically determines the maximum achievable throughput.
+
+This provides:
+
+```text
+Actual Network Capacity
+```
+
+instead of:
+
+```text
+Artificially Limited Capacity
+```
+
+For this reason:
+
+```python
+PROTOCOL = "tcp"
+```
+
+is recommended for all experiments.
+
+---
+
+# CSV Output
+
+The benchmark automatically creates:
+
+```text
+iperf3_parallel_results.csv
+```
+
+Example:
+
+```csv
+loop_number,target_name,sender_transfer_mb,sender_mbits_per_second,sender_MB_per_second,receiver_transfer_mb,receiver_mbits_per_second,receiver_MB_per_second,retransmits
+1,AGX,55.38,46.45,5.54,52.54,43.71,5.25,1
+```
+
+---
+
+# Metric Definitions
+
+### sender_transfer_mb
+
+Total data sent.
+
+Example:
+
+```text
+55.38 MB
+```
+
+---
+
+### sender_mbits_per_second
+
+Sender throughput.
+
+Example:
+
+```text
+46.45 Mbps
+```
+
+---
+
+### sender_MB_per_second
+
+Sender throughput in MB/s.
+
+Example:
+
+```text
+5.54 MB/s
+```
+
+---
+
+### receiver_transfer_mb
+
+Total received data.
+
+Example:
+
+```text
+52.54 MB
+```
+
+---
+
+### receiver_mbits_per_second
+
+Receiver throughput.
+
+Example:
+
+```text
+43.71 Mbps
+```
+
+---
+
+### receiver_MB_per_second
+
+Receiver throughput in MB/s.
+
+Example:
+
+```text
+5.25 MB/s
+```
+
+---
+
+### retransmits
+
+TCP retransmissions.
+
+Example:
+
+```text
+1
+```
+
+Lower values indicate a more stable connection.
+
+---
+
+# Case 1 — One Sender → One Receiver
+
+## Receiver
 
 ```bash
 iperf3 -s -p 5201
 ```
 
-Receiver2:
+or
+
+```bash
+python3 receiver.py
+```
+
+with:
+
+```python
+IPERF_PORTS = [5201]
+```
+
+## Sender
+
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver_1"
+    }
+]
+```
+
+Run:
+
+```bash
+python3 sender.py
+```
+
+---
+
+# Case 2 — One Sender → Two Receivers
+
+## Receiver 1
+
+```bash
+iperf3 -s -p 5201
+```
+
+## Receiver 2
 
 ```bash
 iperf3 -s -p 5202
 ```
 
-Senders must connect to correct port.
+## Sender
 
----
-
-# **6. Logging Results for Reporting**
-
-iperf allows saving data to files:
-
-### iperf3:
-
-```bash
-iperf3 -c <ip> -t 10 --json > result1.json
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver_1"
+    },
+    {
+        "ip": "###.###.###.###",
+        "port": 5202,
+        "name": "receiver_2"
+    }
+]
 ```
 
-### iperf2:
+The sender runs both tests simultaneously.
 
-```bash
-iperf -c <ip> -t 10 > sender1.txt
-```
+CSV contains:
 
----
-
-# **7. Troubleshooting (Most Common Issues)**
-
-### **Error: Connection refused**
-
-Cause: server not running
-Fix:
-
-```bash
-iperf3 -s
+```text
+receiver_1
+receiver_2
+COLLECTIVE_TOTAL
 ```
 
 ---
 
-### **Error: Server busy**
+# Case 3 — One Sender → Three Receivers
 
-Cause: iperf3 already serving another client
-Fix:
-
-* Use iperf2
-* Or use different ports
-
----
-
-### **Error: Address already in use**
-
-Kill stuck process:
+## Receiver 1
 
 ```bash
-sudo killall iperf3
+iperf3 -s -p 5201
+```
+
+## Receiver 2
+
+```bash
+iperf3 -s -p 5202
+```
+
+## Receiver 3
+
+```bash
+iperf3 -s -p 5203
+```
+
+## Sender
+
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver_1"
+    },
+    {
+        "ip": "###.###.###.###",
+        "port": 5202,
+        "name": "receiver_2"
+    },
+    {
+        "ip": "###.###.###.###",
+        "port": 5203,
+        "name": "receiver_3"
+    }
+]
 ```
 
 ---
 
-# **8. Summary Table**
+# Case 4 — Two Senders → One Receiver
 
-| Scenario | Recommended Tool | How many ports? | Easy? | Notes                         |
-| -------- | ---------------- | --------------- | ----- | ----------------------------- |
-| 1→1      | iperf3           | 1               | ✔️    | Most accurate                 |
-| N→1      | iperf2           | 1               | ✔️✔️  | Best for aggregate throughput |
-| N→1      | iperf3           | N ports         | ❌     | Harder to maintain            |
-| N→M      | iperf2           | 1 per receiver  | ✔️✔️  | Flexible                      |
-| N→M      | iperf3           | N×M ports       | ❌❌    | Only for special cases        |
+## Receiver
+
+```bash
+iperf3 -s -p 5201
+```
+
+## Sender 1
+
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver"
+    }
+]
+```
+
+Run:
+
+```bash
+python3 sender.py
+```
+
+## Sender 2
+
+Run the same script simultaneously.
+
+Both senders transmit to the same receiver.
 
 ---
 
+# Case 5 — Two Senders → Two Receivers
 
+Receiver 1:
+
+```bash
+iperf3 -s -p 5201
+```
+
+Receiver 2:
+
+```bash
+iperf3 -s -p 5202
+```
+
+Sender 1:
+
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver_1"
+    }
+]
+```
+
+Sender 2:
+
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5202,
+        "name": "receiver_2"
+    }
+]
+```
+
+Run both simultaneously.
+
+---
+
+# Case 6 — Three Senders → One Receiver
+
+Receiver:
+
+```bash
+iperf3 -s -p 5201
+```
+
+Start three sender systems simultaneously.
+
+Each sender targets:
+
+```python
+IPERF_TARGETS = [
+    {
+        "ip": "###.###.###.###",
+        "port": 5201,
+        "name": "receiver"
+    }
+]
+```
+
+---
+
+# Case 7 — Three Senders → Three Receivers
+
+Receiver 1:
+
+```bash
+iperf3 -s -p 5201
+```
+
+Receiver 2:
+
+```bash
+iperf3 -s -p 5202
+```
+
+Receiver 3:
+
+```bash
+iperf3 -s -p 5203
+```
+
+Sender 1:
+
+```python
+receiver_1
+```
+
+Sender 2:
+
+```python
+receiver_2
+```
+
+Sender 3:
+
+```python
+receiver_3
+```
+
+Run all senders simultaneously.
+
+---
+
+# WiFi Experiments
+
+Run all seven cases over WiFi.
+
+Store results:
+
+```text
+WiFi/
+├── Case_1
+├── Case_2
+├── Case_3
+├── Case_4
+├── Case_5
+├── Case_6
+└── Case_7
+```
+
+---
+
+# LAN Experiments
+
+Reconnect systems using Ethernet.
+
+Repeat all seven cases.
+
+Store results:
+
+```text
+LAN/
+├── Case_1
+├── Case_2
+├── Case_3
+├── Case_4
+├── Case_5
+├── Case_6
+└── Case_7
+```
+
+---
+
+# Expected Outputs
+
+For every test case:
+
+```text
+50 repetitions
+CSV file
+Average throughput
+Average MB/s
+Average Mbps
+Average retransmissions
+Collective throughput
+```
+
+These results can then be compared directly against:
+
+* HTTP
+* CoAP
+* MQTT
+* Kafka
+* Zenoh
+
+to determine how much of the available network capacity each middleware is able to utilize.
