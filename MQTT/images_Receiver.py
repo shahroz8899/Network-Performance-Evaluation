@@ -8,59 +8,74 @@ from datetime import datetime
 import threading
 import time
 
-# MQTT and folder setup
-broker = '192.168.1.135'
+# ===== MQTT Settings =====
+broker = "192.168.1.##" # Broker IP
 port = 1883
-output_base = './analyzed_images'
+topic_filter = "images/#"
+
+# ===== Folder Setup =====
+# Since you run this script from ~/NVME/MQTT,
+# this will save images to ~/NVME/MQTT/analyzed_images
+output_base = "./analyzed_images"
 os.makedirs(output_base, exist_ok=True)
 
+# ===== Experiment Settings =====
 RUN_AFTER_FIRST_IMAGE = 10  # seconds
-NUMBER_OF_LOOPS = 5         # change as needed
+NUMBER_OF_LOOPS = 1         # change to 50 for full experiment
 
-csv_file = 'mqtt_receiver_results.csv'
+csv_file = "mqtt_receiver_results.csv"
 
+# ===== Runtime Variables =====
 timer_started = False
 saved_count = 0
+received_count = 0
 lock = threading.Lock()
 
 all_loop_results = []
 
 
-def stop_after_10_seconds(client):
+def stop_after_duration(client):
     time.sleep(RUN_AFTER_FIRST_IMAGE)
     print("\n⏱️ 10 seconds completed after first image. Stopping receiver...")
     client.disconnect()
 
 
 def on_connect(client, userdata, flags, rc):
-    print(f"✅ Connected to MQTT broker with result code {rc}")
-    client.subscribe("images/#")
+    if rc == 0:
+        print(f"✅ Connected to MQTT broker with result code {rc}")
+        client.subscribe(topic_filter)
+        print(f"📡 Subscribed to topic: {topic_filter}")
+    else:
+        print(f"❌ Failed to connect to MQTT broker. Result code: {rc}")
 
 
 def on_message(client, userdata, msg):
-    global timer_started, saved_count
+    global timer_started, saved_count, received_count
 
     try:
         with lock:
+            received_count += 1
+
             if not timer_started:
                 timer_started = True
                 print("🟢 First image received. 10-second counter started.")
                 threading.Thread(
-                    target=stop_after_10_seconds,
+                    target=stop_after_duration,
                     args=(client,),
                     daemon=True
                 ).start()
 
-        print(f"📥 Message received on topic: {msg.topic}")
-
+        # Decode base64 payload
         image_data = base64.b64decode(msg.payload)
+
+        # Convert bytes to OpenCV image
         np_arr = np.frombuffer(image_data, np.uint8)
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         if image is None:
-            print("❌ Could not decode image.")
             return
 
+        # Save image
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         topic_id = msg.topic.split("/")[-1]
         filename = f"{topic_id}_{timestamp}.jpg"
@@ -71,14 +86,12 @@ def on_message(client, userdata, msg):
         with lock:
             saved_count += 1
 
-        print(f"✅ Image saved: {save_path}")
-
     except Exception as e:
         print(f"❌ Error processing image: {e}")
 
 
 def folder_stats_and_delete(folder):
-    image_exts = ('.jpg', '.jpeg', '.png')
+    image_exts = (".jpg", ".jpeg", ".png")
 
     image_files = [
         os.path.join(folder, f)
@@ -94,7 +107,8 @@ def folder_stats_and_delete(folder):
     mb_per_sec = total_size_mb / RUN_AFTER_FIRST_IMAGE if RUN_AFTER_FIRST_IMAGE > 0 else 0
 
     print("\n📊 Loop Results")
-    print(f"Total images in folder: {total_images}")
+    print(f"Total received messages: {received_count}")
+    print(f"Total images saved: {total_images}")
     print(f"Total folder image size: {total_size_mb:.1f} MB")
     print(f"Images per second: {images_per_sec:.2f}")
     print(f"MB per second: {mb_per_sec:.2f}")
@@ -118,7 +132,7 @@ def write_csv_results(results):
     avg_images_per_sec = sum(r["images_per_sec"] for r in results) / total_loops
     avg_mb_per_sec = sum(r["mb_per_sec"] for r in results) / total_loops
 
-    with open(csv_file, mode='w', newline='') as file:
+    with open(csv_file, mode="w", newline="") as file:
         writer = csv.writer(file)
 
         writer.writerow([
@@ -167,6 +181,9 @@ for loop_number in range(1, NUMBER_OF_LOOPS + 1):
 
     timer_started = False
     saved_count = 0
+    received_count = 0
+
+    os.makedirs(output_base, exist_ok=True)
 
     client = mqtt.Client()
     client.on_connect = on_connect
@@ -177,6 +194,14 @@ for loop_number in range(1, NUMBER_OF_LOOPS + 1):
 
     try:
         client.loop_forever()
+
+    except KeyboardInterrupt:
+        print("\n🛑 Stopped manually.")
+        break
+
+    except Exception as e:
+        print(f"\n❌ MQTT loop error in loop {loop_number}: {type(e).__name__}: {e}")
+
     finally:
         total_images, total_size_mb, images_per_sec, mb_per_sec = folder_stats_and_delete(output_base)
 
