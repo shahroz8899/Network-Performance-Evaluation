@@ -1,0 +1,18 @@
+Validation performed against the supplied reference datasets.
+
+Input: Raw_data.zip
+Script: prepare_analysis_data.py
+
+Generated individual records: 8,100
+Generated analysis observations: 4,200
+
+Master_Dataset_8100.csv:
+- 8,100 source-referenced records reproduced.
+- Network, Technology, Case, source file/row, node/sender, run, throughput, duration, image/transfer fields, status and rate fields matched the supplied 8,100-record dataset.
+
+Analysis_Dataset_4200.csv:
+- 4,200 observations reproduced.
+- All 19 analysis fields matched the supplied 4,200-observation dataset value-for-value.
+
+Command used:
+python prepare_analysis_data.py Raw_data.zip --out output
